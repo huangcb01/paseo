@@ -156,11 +156,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EP_GH_IGNORE_TIME: true
-          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE }}
-          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           PASEO_DESKTOP_SMOKE: "1"
           PASEO_DESKTOP_SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/desktop-smoke
           # Metro's jest workers OOM on the generated ws-outbound.aot.js validator,
@@ -169,6 +164,12 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=${{ matrix.node_heap_mb }}
         run: |
           set -euo pipefail
+          # Fork builds have no Apple signing secrets. Unset any Apple env vars
+          # (an empty CSC_LINK makes electron-builder treat it as a real
+          # certificate link and crash), then build explicitly unsigned.
+          for v in CSC_LINK CSC_KEY_PASSWORD CSC_NAME CSC_IDENTITY_AUTO_DISCOVERY APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            [[ -n "${!v:-}" ]] || unset "$v"
+          done
           export PASEO_REAL_XCRUN="$(command -v xcrun)"
           stapler_bin="$(mktemp -d)"
           trap 'rm -rf "$stapler_bin"' EXIT
@@ -198,6 +199,8 @@ jobs:
           chmod +x "$stapler_bin/xcrun"
           export PATH="$stapler_bin:$PATH"
           build_args=(-- --publish never --mac --${{ matrix.electron_arch }})
+          build_args+=("-c.mac.identity=null")
+          build_args+=("-c.mac.notarize=false")
           build_args+=("-c.publish.releaseType=$RELEASE_TYPE")
           build_args+=("-c.publish.channel=$RELEASE_CHANNEL")
           npm run build:desktop "${build_args[@]}"
